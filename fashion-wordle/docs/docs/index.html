@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Fashion Wordle</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#000000" />
+
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+      background: #fff0f6;
+      display: flex;
+      justify-content: center;
+      padding: 40px 16px;
+      margin: 0;
+    }
+
+    .game {
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 32px;
+      margin: 0 0 6px 0;
+      letter-spacing: -0.5px;
+      color: #000;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      opacity: 0.7;
+      margin-bottom: 18px;
+    }
+
+    .meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 14px;
+      font-size: 12px;
+      opacity: 0.7;
+    }
+
+    .pill {
+      background: rgba(0,0,0,0.06);
+      border: 1px solid rgba(0,0,0,0.08);
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+
+    .clue {
+      font-style: italic;
+      margin: 14px 0 22px 0;
+      color: #333;
+      line-height: 1.5;
+      font-size: 16px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-rows: repeat(6, 1fr);
+      gap: 10px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+    }
+
+    .tile {
+      aspect-ratio: 1 / 1;
+      border: 2px solid #ffb3d9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 900;
+      background: white;
+      user-select: none;
+    }
+
+    .correct {
+      background: #ff4da6;
+      color: white;
+      border: none;
+    }
+
+    .present {
+      background: #000;
+      color: white;
+      border: none;
+    }
+
+    .absent {
+      background: #ffcce6;
+      color: #555;
+      border: none;
+    }
+
+    .note {
+      font-size: 13px;
+      opacity: 0.7;
+      margin-top: 14px;
+    }
+
+    .result {
+      margin-top: 18px;
+      padding: 18px 18px;
+      border-radius: 20px;
+      background: #000;
+      color: #ff4da6;
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: 0.4px;
+      text-align: center;
+      box-shadow: 0 10px 28px rgba(255,77,166,0.4);
+      animation: pop 0.35s ease-out;
+    }
+
+    .btnRow {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      border-radius: 14px;
+      padding: 10px 14px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .btnBlack {
+      background: #000;
+      color: #ff4da6;
+    }
+
+    .btnPink {
+      background: #ff4da6;
+      color: #fff;
+    }
+
+    @keyframes pop {
+      0% { transform: scale(0.92); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="game">
+    <h1>Fashion Wordle</h1>
+    <div class="subtitle">Daily puzzle · Pink & Black Edition</div>
+
+    <div class="meta">
+      <div class="pill" id="puzzleTag">Loading…</div>
+      <div class="pill" id="lengthTag">5 letters</div>
+    </div>
+
+    <div class="clue" id="clue">Loading clue…</div>
+
+    <div id="grid" class="grid"></div>
+
+    <div class="note">Type on your keyboard · Enter to submit · 6 tries</div>
+
+    <div id="result"></div>
+
+    <div class="btnRow">
+      <button class="btnPink" id="newDayBtn" title="Refresh to today">Go to today</button>
+      <button class="btnBlack" id="shareBtn" title="Copy share text">Share</button>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * DAILY PUZZLE RULE
+     * We pick a puzzle based on number of days since a fixed start date.
+     * Everyone sees the same puzzle for the same date.
+     */
+    const START_DATE_UTC = "2025-01-01"; // you can change this anytime
+
+    const MESSAGES = {
+      1: "bae, you're the literal beauty and brains 💅",
+      2: "terrified of your level of fashion knowledge",
+      3: "YOU ARE THE GOAT 🐐",
+      4: "bae you're an ICON",
+      5: "maybe next time bae 💔",
+      6: "maybe next time bae 💔"
+    };
+
+    let puzzle = null; // {answer, clue}
+    let ANSWER = "";
+    let currentRow = 0;
+    let currentCol = 0;
+    let solved = false;
+
+    const guesses = Array.from({ length: 6 }, () => Array(5).fill(""));
+    const grid = document.getElementById("grid");
+    const result = document.getElementById("result");
+    const clueEl = document.getElementById("clue");
+    const puzzleTag = document.getElementById("puzzleTag");
+    const lengthTag = document.getElementById("lengthTag");
+    const shareBtn = document.getElementById("shareBtn");
+    const newDayBtn = document.getElementById("newDayBtn");
+
+    function utcDateString(d = new Date()) {
+      return d.toISOString().slice(0, 10); // YYYY-MM-DD in UTC
+    }
+
+    function daysBetweenUTC(startISO, endISO) {
+      const start = new Date(startISO + "T00:00:00Z").getTime();
+      const end = new Date(endISO + "T00:00:00Z").getTime();
+      return Math.floor((end - start) / 86400000);
+    }
+
+    function getRequestedDate() {
+      const url = new URL(window.location.href);
+      // allow ?date=YYYY-MM-DD so you can preview a specific day
+      const q = url.searchParams.get("date");
+      if (q && /^\d{4}-\d{2}-\d{2}$/.test(q)) return q;
+      return utcDateString(); // today (UTC)
+    }
+
+    function setPuzzleUI(dateISO) {
+      puzzleTag.textContent = `Puzzle · ${dateISO}`;
+      clueEl.textContent = `“${puzzle.clue}”`;
+      lengthTag.textContent = `${ANSWER.length} letters`;
+    }
+
+    function resetGameState() {
+      currentRow = 0;
+      currentCol = 0;
+      solved = false;
+      result.className = "";
+      result.textContent = "";
+      for (let r = 0; r < 6; r++) {
+        guesses[r] = Array(ANSWER.length).fill("");
+      }
+      drawGrid();
+    }
+
+    function drawGrid() {
+      grid.innerHTML = "";
+      for (let r = 0; r < 6; r++) {
+        const rowDiv = document.createElement("div");
+        rowDiv.className = "row";
+        rowDiv.style.gridTemplateColumns = `repeat(${ANSWER.length}, 1fr)`;
+
+        for (let c = 0; c < ANSWER.length; c++) {
+          const tile = document.createElement("div");
+          tile.className = "tile";
+          tile.textContent = guesses[r][c] || "";
+          rowDiv.appendChild(tile);
+        }
+        grid.appendChild(rowDiv);
+      }
+    }
+
+    function showMessage(tries, success) {
+      result.className = "result";
+      if (success) result.textContent = MESSAGES[tries] ?? MESSAGES[6];
+      else result.textContent = MESSAGES[6];
+    }
+
+    // Simple Wordle coloring (not perfect with duplicate letters, but good MVP)
+    function colorRow(guess) {
+      const row = grid.children[currentRow];
+      for (let i = 0; i < ANSWER.length; i++) {
+        const tile = row.children[i];
+        const ch = guess[i];
+
+        if (ch === ANSWER[i]) tile.classList.add("correct");
+        else if (ANSWER.includes(ch)) tile.classList.add("present");
+        else tile.classList.add("absent");
+      }
+    }
+
+    function checkGuess() {
+      const guess = guesses[currentRow].join("");
+      colorRow(guess);
+
+      if (guess === ANSWER) {
+        solved = true;
+        showMessage(currentRow + 1, true);
+        return;
+      }
+
+      if (currentRow === 5) {
+        showMessage(6, false);
+      }
+    }
+
+    function shareText(dateISO) {
+      // Emoji grid based on tile classes
+      const blocks = [];
+      for (let r = 0; r < 6; r++) {
+        const row = grid.children[r];
+        if (!row) continue;
+        let line = "";
+        for (let c = 0; c < ANSWER.length; c++) {
+          const tile = row.children[c];
+          if (tile.classList.contains("correct")) line += "🩷";
+          else if (tile.classList.contains("present")) line += "⬛";
+          else if (tile.classList.contains("absent")) line += "🤍";
+          else line += "▫️";
+        }
+        // stop after last filled row
+        if (guesses[r].every(x => x === "")) break;
+        blocks.push(line);
+      }
+      const url = window.location.origin + window.location.pathname + `?date=${dateISO}`;
+      return `Fashion Wordle · ${dateISO}\n${blocks.join("\n")}\n${url}`;
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (!puzzle) return;
+      if (solved || currentRow >= 6) return;
+
+      const L = ANSWER.length;
+
+      if (e.key === "Backspace") {
+        if (currentCol > 0) {
+          currentCol--;
+          guesses[currentRow][currentCol] = "";
+          drawGrid();
+        }
+        return;
+      }
+
+      if (e.key === "Enter") {
+        if (currentCol === L) {
+          checkGuess();
+          if (!solved) {
+            currentRow++;
+            currentCol = 0;
+          }
+        }
+        return;
+      }
+
+      if (/^[a-zA-Z]$/.test(e.key)) {
+        if (currentCol < L) {
+          guesses[currentRow][currentCol] = e.key.toUpperCase();
+          currentCol++;
+          drawGrid();
+        }
+      }
+    });
+
+    shareBtn.addEventListener("click", async () => {
+      const dateISO = getRequestedDate();
+      try {
+        await navigator.clipboard.writeText(shareText(dateISO));
+        shareBtn.textContent = "Copied 💖";
+        setTimeout(() => (shareBtn.textContent = "Share"), 900);
+      } catch {
+        alert("Copy failed (browser permissions).");
+      }
+    });
+
+    newDayBtn.addEventListener("click", () => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("date");
+      window.location.href = url.toString();
+    });
+
+    async function loadPuzzle() {
+      const dateISO = getRequestedDate();
+
+      const res = await fetch("puzzles.json", { cache: "no-store" });
+      const puzzles = await res.json(); // [{answer:"WORTH", clue:"..."}, ...]
+
+      const dayIndex = daysBetweenUTC(START_DATE_UTC, dateISO);
+      const idx = ((dayIndex % puzzles.length) + puzzles.length) % puzzles.length;
+
+      puzzle = puzzles[idx];
+      ANSWER = String(puzzle.answer).toUpperCase().trim();
+
+      setPuzzleUI(dateISO);
+      resetGameState();
+    }
+
+    // Service worker (PWA offline-ish)
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+
+    loadPuzzle();
+  </script>
+</body>
+</html>
