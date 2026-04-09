@@ -120,25 +120,31 @@
 
   <script>
     const ANSWER = "WORTH";
+    const MAX_ROWS = 6;
+    const WORD_LENGTH = 5;
+
     let currentRow = 0;
     let currentCol = 0;
     let solved = false;
 
-    const guesses = Array.from({ length: 6 }, () => Array(5).fill(""));
+    const guesses = Array.from({ length: MAX_ROWS }, () => Array(WORD_LENGTH).fill(""));
     const grid = document.getElementById("grid");
     const result = document.getElementById("result");
 
     function drawGrid() {
       grid.innerHTML = "";
-      guesses.forEach(row => {
+
+      guesses.forEach((row) => {
         const rowDiv = document.createElement("div");
         rowDiv.className = "row";
-        row.forEach(letter => {
+
+        row.forEach((letter) => {
           const tile = document.createElement("div");
           tile.className = "tile";
           tile.textContent = letter;
           rowDiv.appendChild(tile);
         });
+
         grid.appendChild(rowDiv);
       });
     }
@@ -162,44 +168,73 @@
       const guess = guesses[currentRow].join("");
 
       [...row.children].forEach((tile, i) => {
-        if (guess[i] === ANSWER[i]) tile.classList.add("correct");
-        else if (ANSWER.includes(guess[i])) tile.classList.add("present");
-        else tile.classList.add("absent");
+        tile.classList.remove("correct", "present", "absent");
+
+        if (guess[i] === ANSWER[i]) {
+          tile.classList.add("correct");
+        } else if (ANSWER.includes(guess[i])) {
+          tile.classList.add("present");
+        } else {
+          tile.classList.add("absent");
+        }
       });
 
       if (guess === ANSWER) {
         solved = true;
         showMessage(currentRow + 1, true);
-      } else if (currentRow === 5) {
-        showMessage(6, false);
+        return;
+      }
+
+      if (currentRow === MAX_ROWS - 1) {
+        showMessage(MAX_ROWS, false);
+        return;
+      }
+
+      currentRow++;
+      currentCol = 0;
+    }
+
+    function handleKeydown(e) {
+      if (solved || currentRow >= MAX_ROWS) return;
+
+      // 🔥 THIS FIXES DOUBLE TYPING
+      if (e.repeat) return;
+
+      const key = e.key;
+
+      if (key === "Backspace") {
+        e.preventDefault();
+
+        if (currentCol > 0) {
+          currentCol--;
+          guesses[currentRow][currentCol] = "";
+          drawGrid();
+        }
+        return;
+      }
+
+      if (key === "Enter") {
+        e.preventDefault();
+
+        if (currentCol === WORD_LENGTH) {
+          checkGuess();
+        }
+        return;
+      }
+
+      if (/^[a-zA-Z]$/.test(key)) {
+        e.preventDefault();
+
+        if (currentCol < WORD_LENGTH) {
+          guesses[currentRow][currentCol] = key.toUpperCase();
+          currentCol++;
+          drawGrid();
+        }
       }
     }
 
     drawGrid();
-
-    document.addEventListener("keydown", (e) => {
-      if (solved || currentRow >= 6) return;
-
-      let redraw = false;
-
-      if (e.key === "Backspace" && currentCol > 0) {
-        currentCol--;
-        guesses[currentRow][currentCol] = "";
-        redraw = true;
-      }
-      else if (e.key === "Enter" && currentCol === 5) {
-        checkGuess();
-        currentRow++;
-        currentCol = 0;
-      }
-      else if (/^[a-zA-Z]$/.test(e.key) && currentCol < 5) {
-        guesses[currentRow][currentCol] = e.key.toUpperCase();
-        currentCol++;
-        redraw = true;
-      }
-
-      if (redraw) drawGrid();
-    });
+    document.addEventListener("keydown", handleKeydown);
   </script>
 </body>
 </html>
